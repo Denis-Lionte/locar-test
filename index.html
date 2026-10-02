@@ -3,52 +3,111 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>LocAR 02 - GPS & Sensors Test</title>
-  <!-- Three.js and Location Engine via CDN -->
+  <title>LocAR - Telemetry & Sensor Dashboard</title>
+  
+  <!-- Three.js & Location Engine -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/three.js/build/ar-threex-location-only.js"></script>
+  
   <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; }
-    #status {
+    body { margin: 0; overflow: hidden; font-family: monospace; }
+    
+    /* Telemetry HUD Panel */
+    #dashboard {
       position: absolute; top: 10px; left: 10px; z-index: 10;
-      background: rgba(0,0,0,0.75); color: white; padding: 12px 16px;
-      border-radius: 8px; font-size: 14px; max-width: 85%; line-height: 1.4;
+      background: rgba(10, 15, 25, 0.85); color: #00ffcc;
+      padding: 12px 16px; border-radius: 8px; font-size: 13px;
+      line-height: 1.5; pointer-events: none; border: 1px solid rgba(0, 255, 204, 0.3);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5); min-width: 250px;
     }
+    .hud-title { color: #fff; font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #444; padding-bottom: 4px; }
+    .hud-val { color: #fff; }
+    
     #start-btn {
       position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-      z-index: 20; padding: 16px 32px; font-size: 18px; font-weight: bold;
+      z-index: 20; padding: 16px 32px; font-size: 16px; font-weight: bold;
       background: #2563eb; color: white; border: none; border-radius: 50px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.4); font-family: sans-serif;
     }
   </style>
 </head>
 <body>
-  <div id="status">Press the button below to initialize camera and GPS sensors.</div>
-  <button id="start-btn">Start AR Test</button>
+
+  <div id="dashboard">
+    <div class="hud-title">📡 AR SENSOR TELEMETRY</div>
+    <div>Status: <span id="status" class="hud-val">Press Start below</span></div>
+    <div style="margin-top: 6px;"><b>GPS:</b> <span id="gps" class="hud-val">Waiting...</span></div>
+    <div><b>Altitude:</b> <span id="altitude" class="hud-val">Waiting...</span></div>
+    <div style="margin-top: 6px;"><b>Accel (m/s²):</b><br>
+      X: <span id="acc-x" class="hud-val">0.0</span> 
+      Y: <span id="acc-y" class="hud-val">0.0</span> 
+      Z: <span id="acc-z" class="hud-val">0.0</span>
+    </div>
+    <div style="margin-top: 6px;"><b>Orientation (°):</b><br>
+      Heading: <span id="orient-heading" class="hud-val">0°</span><br>
+      Pitch: <span id="orient-pitch" class="hud-val">0°</span> | 
+      Roll: <span id="orient-roll" class="hud-val">0°</span>
+    </div>
+  </div>
+
+  <button id="start-btn">Start AR & Sensors</button>
 
   <script>
-    const statusBox = document.getElementById('status');
+    const elStatus = document.getElementById('status');
+    const elGps = document.getElementById('gps');
+    const elAlt = document.getElementById('altitude');
+    const elAccX = document.getElementById('acc-x');
+    const elAccY = document.getElementById('acc-y');
+    const elAccZ = document.getElementById('acc-z');
+    const elHeading = document.getElementById('orient-heading');
+    const elPitch = document.getElementById('orient-pitch');
+    const elRoll = document.getElementById('orient-roll');
     const startBtn = document.getElementById('start-btn');
 
     startBtn.addEventListener('click', async () => {
       startBtn.style.display = 'none';
 
-      // Request iOS sensor permissions if needed
+      // 1. Request iOS Motion & Orientation Permissions
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         try {
-          const perm = await DeviceOrientationEvent.requestPermission();
-          if (perm !== 'granted') {
-            statusBox.innerText = 'Device orientation permission denied.';
-            return;
-          }
-        } catch (e) { console.error(e); }
+          await DeviceOrientationEvent.requestPermission();
+        } catch (e) { console.error('Orientation permission error:', e); }
+      }
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        try {
+          await DeviceMotionEvent.requestPermission();
+        } catch (e) { console.error('Motion permission error:', e); }
       }
 
-      init();
+      initSensors();
+      initAR();
     });
 
-    function init() {
-      statusBox.innerText = 'Waiting for GPS fix and camera stream...';
+    // 2. Hardware Accelerometer & Gyroscope Listeners
+    function initSensors() {
+      // Accelerometer (Linear + Gravity)
+      window.addEventListener('devicemotion', (e) => {
+        const acc = e.accelerationIncludingGravity || e.acceleration;
+        if (acc) {
+          elAccX.innerText = acc.x ? acc.x.toFixed(2) : '0.00';
+          elAccY.innerText = acc.y ? acc.y.toFixed(2) : '0.00';
+          elAccZ.innerText = acc.z ? acc.z.toFixed(2) : '0.00';
+        }
+      });
+
+      // Compass & Orientation (Alpha, Beta, Gamma)
+      window.addEventListener('deviceorientation', (e) => {
+        // webkitCompassHeading is true north on iOS; e.alpha is 0-360 compass on Android
+        let heading = e.webkitCompassHeading || (e.alpha ? (360 - e.alpha) : 0);
+        elHeading.innerText = Math.round(heading) + '°';
+        elPitch.innerText = e.beta ? Math.round(e.beta) + '°' : '0°';
+        elRoll.innerText = e.gamma ? Math.round(e.gamma) + '°' : '0°';
+      });
+    }
+
+    // 3. AR Engine and GPS / Altitude
+    function initAR() {
+      elStatus.innerText = 'Acquiring GPS fix...';
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -62,35 +121,46 @@
 
       let boxesAdded = false;
 
+      // Real GPS updates from device
       locar.on('gpsupdate', (pos) => {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
-        statusBox.innerHTML = `<b>GPS Locked!</b><br>Lat: ${lat.toFixed(5)}, Lon: ${lon.toFixed(5)}<br>Rotate phone to find the 4 colored boxes:`;
+        const coords = pos.coords;
+        const lat = coords.latitude;
+        const lon = coords.longitude;
+        const acc = coords.accuracy ? Math.round(coords.accuracy) : 0;
+        
+        elStatus.innerText = 'Active (Tracking)';
+        elGps.innerText = `${lat.toFixed(5)}, ${lon.toFixed(5)} (±${acc}m)`;
 
+        // Altitude handling (can be null indoors until 4+ satellites lock)
+        if (coords.altitude !== null && coords.altitude !== undefined) {
+          const altAcc = coords.altitudeAccuracy ? ` (±${Math.round(coords.altitudeAccuracy)}m)` : '';
+          elAlt.innerText = `${coords.altitude.toFixed(1)} m above sea${altAcc}`;
+        } else {
+          elAlt.innerText = 'Acquiring 3D satellite lock...';
+        }
+
+        // Spawn directional boxes
         if (!boxesAdded) {
           boxesAdded = true;
-          const dist = 0.0005; // ~50-55 meters away
+          const dist = 0.0005; // ~50m offset
 
-          const createBox = (color, lonOffset, latOffset) => {
+          const createBox = (color, lonOffset, latOffset, elevation = 0) => {
             const geom = new THREE.BoxGeometry(10, 10, 10);
             const mat = new THREE.MeshBasicMaterial({ color: color });
             const mesh = new THREE.Mesh(geom, mat);
-            locar.add(mesh, lon + lonOffset, lat + latOffset, 0);
+            // locar.add(mesh, longitude, latitude, elevation)
+            locar.add(mesh, lon + lonOffset, lat + latOffset, elevation);
           };
 
-          // 1. North: Red
-          createBox(0xff0000, 0, dist);
-          // 2. South: Yellow
-          createBox(0xffff00, 0, -dist);
-          // 3. East: Green
-          createBox(0x00ff00, dist, 0);
-          // 4. West: Cyan / Blue
-          createBox(0x00ffff, -dist, 0);
+          createBox(0xff0000, 0, dist, 0);     // North: Red
+          createBox(0xffff00, 0, -dist, 0);    // South: Yellow
+          createBox(0x00ff00, dist, 0, 0);     // East: Green
+          createBox(0x00ffff, -dist, 0, 0);    // West: Cyan
         }
       });
 
       locar.on('gpserror', (err) => {
-        statusBox.innerText = `GPS Error: ${err.message}`;
+        elStatus.innerText = `GPS Error (${err.code}): ${err.message}`;
       });
 
       locar.startGps();
